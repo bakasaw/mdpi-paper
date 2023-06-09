@@ -81,32 +81,104 @@ y_test_one_hot = to_categorical(y_test)
 
 ###Model 
 
-BACKBONE2 = 'inceptionv3'
-preprocess_input2 = sm.get_preprocessing(BACKBONE2)
+BACKBONE = 'inceptionv3'
+preprocess_input = sm.get_preprocessing(BACKBONE2)
 
 # preprocess input
-X_train2 = preprocess_input2(X_train)
-X_test2 = preprocess_input2(X_test)
+X_train = preprocess_input(X_train)
+X_test = preprocess_input(X_test)
 
 # define model
-model2 = sm.Unet(BACKBONE2, encoder_weights='imagenet', classes=n_classes, activation=activation)
+model = sm.Unet(BACKBONE, encoder_weights='imagenet', classes=n_classes, activation=activation)
 
 
 # compile keras model with defined optimozer, loss and metrics
-model2.compile(optim, total_loss, metrics)
-#model2.compile(optimizer='adam', loss='categorical_crossentropy', metrics=metrics)
+model.compile(optim, total_loss, metrics)
+#model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=metrics)
 
 
-print(model2.summary())
+print(model.summary())
 
 
-history2=model2.fit(X_train2, 
+history2=model.fit(X_train, 
           y_train_cat,
           batch_size=8, 
           epochs=50,
           verbose=1,
-          validation_data=(X_test2, y_test_cat))
+          validation_data=(X_test, y_test_cat))
 
 
-model2.save('inceptionv3_backbone_50epochs.hdf5')
+model.save('inceptionv3_backbone_50epochs.hdf5')
 
+#Now, let us use features from convolutional network for RF
+feature_extractor=VGG_model.predict(x_train)
+
+features = feature_extractor.reshape(feature_extractor.shape[0], -1)
+
+X_for_training = features #This is our X input to RF,SVM or XGBoost
+
+#RANDOM FOREST, SVM, or XGBoost
+from sklearn.ensemble import RandomForestClassifier
+model = RandomForestClassifier(n_estimators = 100, random_state = 42)
+model.fit(X_for_training, y_train) #For sklearn no one hot encoding
+
+# Train the model on training data
+
+#Send test data through same feature extractor process
+X_test_feature = VGG_model.predict(x_test)
+X_test_features = X_test_feature.reshape(X_test_feature.shape[0], -1)
+
+#Now predict using the trained RF model. 
+prediction = model.predict(X_test_features)
+#Inverse le transform to get original label back. 
+prediction = le.inverse_transform(prediction)
+
+#Print overall accuracy
+from sklearn import metrics
+print ("Accuracy = ", metrics.accuracy_score(test_labels, prediction))
+#print("Micro Precision = ", metrics.precision_score(test_labels, prediction, average='micro'))
+
+#print("Micro Recall = ", metrics.recall_score(test_labels, prediction, average='micro'))
+#print("Micro F1-score = ", metrics.f1_score(test_labels, prediction, average='micro'))
+
+
+print("Weighted Precision = ", metrics.precision_score(test_labels, prediction, average='weighted'))
+#print("Weighted Recall = ", metrics.recall_score(test_labels, prediction, average='weighted'))
+print("Weighted F1-score = ", metrics.f1_score(test_labels, prediction, average='weighted'))
+
+from sklearn.metrics import classification_report
+print("\nClassification Report\n")
+print(metrics.classification_report(test_labels, prediction, target_names=['Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5']))
+
+#Confusion Matrix - verify accuracy of each class
+from sklearn.metrics import confusion_matrix
+
+cm = confusion_matrix(test_labels, prediction)
+#print(cm)
+sns.heatmap(cm, annot=True)
+
+#Check results on a few select images
+n=np.random.randint(0, x_test.shape[0])
+img = x_test[n]
+plt.imshow(img)
+input_img = np.expand_dims(img, axis=0) #Expand dims so the input is (num images, x, y, c)
+input_img_feature=VGG_model.predict(input_img)
+input_img_features=input_img_feature.reshape(input_img_feature.shape[0], -1)
+prediction = model.predict(input_img_features)[0] 
+prediction = le.inverse_transform([prediction])  #Reverse the label encoder to original name
+print("The prediction for this image is: ", prediction)
+print("The actual label for this image is: ", test_labels[n])
+
+#Check results on a few random images
+import random
+n=random.randint(0, x_test.shape[0]-1) #Select the index of image to be loaded for testing
+img = x_test[n]
+plt.imshow(img)
+
+from yellowbrick.base import Visualizer
+from yellowbrick.classifier import ROCAUC
+Decisionmodel = SVC()
+Visualizer = ROCAUC(Decisionmodel, classes = ['0', '1', '2', '3', '4'])
+Visualizer.fit(X_for_training, y_train)
+Visualizer.score(X_test_features, y_test)
+Visualizer.show()
