@@ -79,3 +79,34 @@ from keras.utils import to_categorical
 y_train_one_hot = to_categorical(y_train)
 y_test_one_hot = to_categorical(y_test)
 
+###Model 
+
+BACKBONE2 = 'inceptionv3'
+preprocess_input2 = sm.get_preprocessing(BACKBONE2)
+
+# preprocess input
+X_train2 = preprocess_input2(X_train)
+X_test2 = preprocess_input2(X_test)
+
+# define model
+model2 = sm.Unet(BACKBONE2, encoder_weights='imagenet', classes=n_classes, activation=activation)
+
+
+# compile keras model with defined optimozer, loss and metrics
+model2.compile(optim, total_loss, metrics)
+#model2.compile(optimizer='adam', loss='categorical_crossentropy', metrics=metrics)
+
+
+print(model2.summary())
+
+
+history2=model2.fit(X_train2, 
+          y_train_cat,
+          batch_size=8, 
+          epochs=50,
+          verbose=1,
+          validation_data=(X_test2, y_test_cat))
+
+
+model2.save('inceptionv3_backbone_50epochs.hdf5')
+
